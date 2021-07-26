@@ -1,0 +1,1 @@
+./juego 1 2 3 ./entrada.txt
