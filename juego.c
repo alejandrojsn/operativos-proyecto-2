@@ -5,7 +5,7 @@
 #include <stdbool.h>
 
 char *filename;
-int n_procesos, n_generaciones, n_visualizacion, nfilas, ncol;
+int n_procesos, n_generaciones, n_visualizacion, nfilas, ncol, *limite_inferior, *limite_superior;
 
 void master();
 
@@ -40,6 +40,28 @@ void master()
     }
 
     fscanf(input_file, "%d %d", &nfilas, &ncol);
+
+    n_procesos = n_procesos < nfilas ? n_procesos : nfilas;
+
+    limite_inferior = malloc(sizeof(int) * n_procesos);
+    limite_superior = malloc(sizeof(int) * n_procesos);
+
+    int filas_por_proceso = nfilas / n_procesos;
+    int resto = nfilas % n_procesos;
+    int contador = 0;
+
+    for(int i = 0; i < n_procesos; i++) {
+        limite_inferior[i] = contador;
+
+        limite_superior[i] = contador += filas_por_proceso + (resto > 0);
+
+        resto -= resto > 0;
+    }
+
+    for(int i = 0; i < n_procesos; i++) {
+        printf("[%d,", limite_inferior[i]);
+        printf("%d)\n", limite_superior[i]);
+    }
 
     fclose(input_file);
 }
