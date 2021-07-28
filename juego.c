@@ -7,7 +7,7 @@
 #include <sys/mman.h>
 
 char *filename;
-int n_procesos, n_generaciones, n_visualizacion, nfilas, ncol, *limite_inferior, *limite_superior, region_tabla, **tablero;
+int n_procesos, n_generaciones, n_visualizacion, nfilas, ncol, *limite_inferior, *limite_superior, id, **grid, N;
 
 FILE *input_file;
 
@@ -23,6 +23,10 @@ void process_worker(int i);
 void load_region();
 void create_pipes();
 void close_unnecessary_pipes();
+void write_to_neighbors();
+void read_from_neighbors();
+void simulate_game();
+int count_neighbours(int i, int j);
 
 int main(int argc, char *argv[])
 {
@@ -110,34 +114,57 @@ void master()
 
 void process_worker(int i)
 {
-    region_tabla = i;
+    id = i;
+
+    N = limite_superior[id] - limite_inferior[id] + 2;
 
     close_unnecessary_pipes();
 
     load_region();
+
+    write_to_neighbors();
+
+    read_from_neighbors();
+
+    simulate_game();
+
+    // debug code to print grids
+    pthread_mutex_lock(mutex);
+
+    printf("region %d\n", id);
+
+    for(int i = 0; i < N; i++) {
+        for (int j = 0; j < ncol; j++) {
+            printf("%d ", grid[i][j]);
+        }
+
+        printf("\n");
+    }
+
+    pthread_mutex_unlock(mutex);
 }
 
 void load_region()
 {
     // move to this process' corresponding region
-    for(int i = 0; i < limite_inferior[region_tabla] * ncol; i++) {
+    for(int i = 0; i < limite_inferior[id] * ncol; i++) {
         int helper;
         fscanf(input_file, "%d", &helper);
     }
 
-    int num_filas = limite_superior[region_tabla] - limite_inferior[region_tabla];
-
     // create matrix
-    tablero = malloc(sizeof(int *) * num_filas);
-    tablero[0] = malloc(sizeof(int) * num_filas * ncol);
-    for (int i = 1; i < num_filas; i++) {
-        tablero[i] = tablero[0] + i * ncol;
+    grid = malloc(sizeof(int *) * N);
+    grid[0] = malloc(sizeof(int) * N * ncol);
+    for (int i = 1; i < N; i++) {
+        grid[i] = grid[0] + i * ncol;
     }
 
+    memset(grid[0], 0, sizeof(int) * N * ncol);
+
     // load region
-    for (int i = 0; i < num_filas; i++) {
+    for (int i = 1; i < N - 1; i++) {
         for (int j = 0; j < ncol; j++) {
-            fscanf(input_file, "%d", &tablero[i][j]);
+            fscanf(input_file, "%d", &grid[i][j]);
         }
     }
 
@@ -176,19 +203,97 @@ void close_unnecessary_pipes()
     for (int i = 0; i < n_procesos; i++) {
 
         // close all read pipes, except the ones this process will use
-        if (i != region_tabla) {
+        // also close all write master_pipes except the one this process will use
+        if (i != id) {
             close(down_pipes[i][0]);
             close(up_pipes[i][0]);
-            close(master_pipes[i][0]);
-            colse(master_pipes[i][1]);
+            close(master_pipes[i][1]);
         }
 
-        if (i != region_tabla + 1) {
-            close(down_pipes[i][0]);
+        // close all read down_pipes, except the ones this process will use
+        if (i != id + 1) {
+            close(down_pipes[i][1]);
         }
 
-        if (i != region_tabla - 1) {
-            close(up_pipes[i][0]);
+        // close all read up_pipes, except the ones this process will use
+        if (i != id - 1) {
+            close(up_pipes[i][1]);
+        }
+
+        // close all read master_pipes
+        close(master_pipes[i][0]);
+    }
+
+    if (id == 0) {
+        close(down_pipes[0][0]);
+    }
+
+    if (id == n_procesos - 1) {
+        close(up_pipes[0][0]);
+    }
+}
+
+void write_to_neighbors()
+{
+    if (id < n_procesos - 1) {
+        write(down_pipes[id + 1][1], grid[N - 2], sizeof(int) * ncol);
+    }
+
+    if (id > 0) {
+        write(up_pipes[id - 1][1], grid[1], sizeof(int) * ncol);
+    }
+}
+
+void read_from_neighbors()
+{
+    if (id > 0) {
+        read(down_pipes[id][0], grid[0], sizeof(int) * ncol);
+    }
+
+    if (id < n_procesos - 1) {
+        read(up_pipes[id][0], grid[N-1], sizeof(int) * ncol);
+    }
+}
+
+void simulate_game()
+{
+    // create matrix of neighbours count
+    int **neighbours = malloc(sizeof(int *) * N);
+    neighbours[0] = malloc(sizeof(int) * N * ncol);
+    for (int i = 1; i < N; i++) {
+        neighbours[i] = neighbours[0] + i * ncol;
+    }
+
+    for (int i = 1; i < N-1; i++) {
+        for (int j = 0; j < ncol; j++) {
+            neighbours[i][j] = count_neighbours(i, j);
         }
     }
+
+    for (int i = 1; i < N-1; i++) {
+        for(int j = 0; j < ncol; j++) {
+            if (!grid[i][j] && neighbours[i][j] == 3) {
+                grid[i][j] = 1;
+            } else if (grid[i][j] && (neighbours[i][j] != 2 && neighbours[i][j] != 3)) {
+                grid[i][j] = 0;
+            }
+        }
+    }
+
+    free(neighbours);
+}
+
+int count_neighbours(int i, int j)
+{
+    int neighbours_count = grid[i-1][j] + grid[i+1][j];
+
+    if (j > 0) {
+        neighbours_count += grid[i-1][j-1] + grid[i][j-1] + grid[i + 1][j-1];
+    }
+
+    if (j < ncol - 1) {
+        neighbours_count += grid[i-1][j+1] + grid[i][j+1] + grid[i + 1][j+1];
+    }
+
+    return neighbours_count;
 }
