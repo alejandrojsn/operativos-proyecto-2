@@ -3,8 +3,9 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdbool.h>
-#include <pthread.h>
+// #include <pthread.h>
 #include <sys/mman.h>
+// #include <signal.h>
 
 char *filename;
 int n_procesos, n_generaciones, n_visualizacion, nfilas, ncol, *limite_inferior, *limite_superior, id, **grid, N;
@@ -15,8 +16,8 @@ pid_t *pids;
 
 int **master_pipes, **down_pipes, **up_pipes;
 
-pthread_mutex_t *mutex;
-pthread_mutexattr_t mutexattr;
+// pthread_mutex_t *mutex;
+// pthread_mutexattr_t mutexattr;
 
 void master();
 void process_worker(int i);
@@ -27,6 +28,8 @@ void write_to_neighbors();
 void read_from_neighbors();
 void simulate_game();
 int count_neighbours(int i, int j);
+void write_to_master();
+void read_from_childs_and_print();
 
 int main(int argc, char *argv[])
 {
@@ -79,15 +82,15 @@ void master()
 
     create_pipes();
 
-    pthread_mutexattr_init(&mutexattr);
+    // pthread_mutexattr_init(&mutexattr);
         
-    /* modify attribute */
-    pthread_mutexattr_setpshared(&mutexattr, PTHREAD_PROCESS_SHARED);
+    // /* modify attribute */
+    // pthread_mutexattr_setpshared(&mutexattr, PTHREAD_PROCESS_SHARED);
 
-    mutex = (pthread_mutex_t*) mmap(NULL, sizeof(pthread_mutex_t), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANON, -1, 0);
+    // mutex = (pthread_mutex_t*) mmap(NULL, sizeof(pthread_mutex_t), PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANON, -1, 0);
 
-    /* mutex Initialization */
-    pthread_mutex_init(mutex, &mutexattr);
+    // /* mutex Initialization */
+    // pthread_mutex_init(mutex, &mutexattr);
 
     pids = malloc(sizeof(pid_t) * n_procesos);
 
@@ -102,14 +105,27 @@ void master()
         pids[i] = pid;
     }
 
-    for (int i = 0; i < n_procesos; i++) {
-        waitpid(pids[i], NULL, 0);
+    printf("Generación 0\n");
+    read_from_childs_and_print();
+
+    for(int i = 1; i <= n_generaciones / n_visualizacion; i++) {
+        printf("Generación %d\n", i*n_visualizacion);
+        read_from_childs_and_print();
     }
 
-    pthread_mutexattr_destroy(&mutexattr);
-    pthread_mutex_destroy(mutex);
+    if (n_generaciones % n_visualizacion != 0) {
+        printf("Generación %d\n", n_generaciones);
+        read_from_childs_and_print();
+    }
 
-    munmap(mutex, sizeof(pthread_mutex_t));
+    // for (int i = 0; i < n_procesos; i++) {
+    //     waitpid(pids[i], NULL, 0);
+    // }
+
+    // pthread_mutexattr_destroy(&mutexattr);
+    // pthread_mutex_destroy(mutex);
+
+    // munmap(mutex, sizeof(pthread_mutex_t));
 }
 
 void process_worker(int i)
@@ -122,26 +138,39 @@ void process_worker(int i)
 
     load_region();
 
-    write_to_neighbors();
+    write_to_master();
 
-    read_from_neighbors();
+    for(int i = 1; i <= n_generaciones; i++) {
 
-    simulate_game();
+        write_to_neighbors();
 
-    // debug code to print grids
-    pthread_mutex_lock(mutex);
+        read_from_neighbors();
 
-    printf("region %d\n", id);
+        simulate_game();
 
-    for(int i = 0; i < N; i++) {
-        for (int j = 0; j < ncol; j++) {
-            printf("%d ", grid[i][j]);
+        if (i % n_visualizacion == 0) {
+            write_to_master();
         }
 
-        printf("\n");
+        // debug code to print grids
+        // pthread_mutex_lock(mutex);
+
+        // printf("region %d\n", id);
+
+        // for(int i = 0; i < N; i++) {
+        //     for (int j = 0; j < ncol; j++) {
+        //         printf("%d ", grid[i][j]);
+        //     }
+
+        //     printf("\n");
+        // }
+
+        // pthread_mutex_unlock(mutex);
     }
 
-    pthread_mutex_unlock(mutex);
+    if (n_generaciones % n_visualizacion != 0) {
+        write_to_master();
+    }
 }
 
 void load_region()
@@ -174,19 +203,19 @@ void load_region()
 void create_pipes()
 {
     down_pipes = malloc(sizeof(int *) * n_procesos);
-    down_pipes[0] = malloc(sizeof(int) * 2);
+    down_pipes[0] = malloc(sizeof(int) * 2 * n_procesos);
     for (int i = 1; i < n_procesos; i++) {
        down_pipes[i] = down_pipes[0] + i * 2;
     }
 
     up_pipes = malloc(sizeof(int *) * n_procesos);
-    up_pipes[0] = malloc(sizeof(int) * 2);
+    up_pipes[0] = malloc(sizeof(int) * 2 * n_procesos);
     for (int i = 1; i < n_procesos; i++) {
        up_pipes[i] = up_pipes[0] + i * 2;
     }
 
     master_pipes = malloc(sizeof(int *) * n_procesos);
-    master_pipes[0] = malloc(sizeof(int) * 2);
+    master_pipes[0] = malloc(sizeof(int) * 2 * n_procesos);
     for (int i = 1; i < n_procesos; i++) {
        master_pipes[i] = master_pipes[0] + i * 2;
     }
@@ -225,11 +254,11 @@ void close_unnecessary_pipes()
     }
 
     if (id == 0) {
-        close(down_pipes[0][0]);
+        close(down_pipes[id][0]);
     }
 
     if (id == n_procesos - 1) {
-        close(up_pipes[0][0]);
+        close(up_pipes[id][0]);
     }
 }
 
@@ -280,6 +309,7 @@ void simulate_game()
         }
     }
 
+    free(neighbours[0]);
     free(neighbours);
 }
 
@@ -296,4 +326,35 @@ int count_neighbours(int i, int j)
     }
 
     return neighbours_count;
+}
+
+void write_to_master()
+{
+    write(master_pipes[id][1], grid[1], sizeof(int) * (N - 2) * ncol);
+}
+
+void read_from_childs_and_print()
+{
+    for(int i = 0; i < n_procesos; i++) {
+        int N = limite_superior[i] - limite_inferior[i];
+
+        int **temp = malloc(sizeof(int *) * N);
+        temp[0] = malloc(sizeof(int) * N * ncol);
+        for (int j = 1; j < N; j++) {
+            temp[j] = temp[0] + j * ncol;
+        }
+
+        read(master_pipes[i][0], temp[0], sizeof(int) * N * ncol);
+
+        for(int j = 0; j < N; j++) {
+            for (int k = 0; k < ncol; k++) {
+                printf("%d ", temp[j][k]);
+            }
+
+            printf("\n");
+        }
+
+        free(temp[0]);
+        free(temp);
+    }
 }
