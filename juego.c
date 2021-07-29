@@ -87,7 +87,7 @@ void master()
         if (pid == 0) {
             process_worker(i);
             return;
-        } else if(pid == -1) {
+        } else if (pid == -1) {
             printf("There was an error creating a child process");
             exit(1);
         }
@@ -98,7 +98,7 @@ void master()
     read_from_childs_and_print();
 
     // read all the other generations
-    for(int i = 1; i <= n_generaciones / n_visualizacion; i++) {
+    for (int i = 1; i <= n_generaciones / n_visualizacion; i++) {
         printf("Generación %d\n", i*n_visualizacion);
         read_from_childs_and_print();
     }
@@ -126,7 +126,7 @@ void process_worker(int i)
     write_to_master();
 
     // main loop
-    for(int i = 1; i <= n_generaciones; i++) {
+    for (int i = 1; i <= n_generaciones; i++) {
 
         // send frontier rows to neighbors
         write_to_neighbors();
@@ -163,7 +163,7 @@ void process_worker(int i)
 void load_region()
 {
     // move to this process' corresponding region
-    for(int i = 0; i < lower_bounds[id] * ncols; i++) {
+    for (int i = 0; i < lower_bounds[id] * ncols; i++) {
         int helper;
         fscanf(input_file, "%d", &helper);
     }
@@ -212,7 +212,7 @@ void create_pipes()
     }
 
     // initialize pipes
-    for(int i = 0; i < n_procesos; i++) {
+    for (int i = 0; i < n_procesos; i++) {
         pipe(down_pipes[i]);
         pipe(up_pipes[i]);
         pipe(master_pipes[i]);
@@ -300,7 +300,7 @@ void simulate_game()
 
     // change the cell alive/dead status based on neighbours count following the rules of the game of life
     for (int i = 1; i < N-1; i++) {
-        for(int j = 0; j < ncols; j++) {
+        for (int j = 0; j < ncols; j++) {
             if (!grid[i][j] && neighbours[i][j] == 3) {
                 grid[i][j] = 1;
             } else if (grid[i][j] && (neighbours[i][j] != 2 && neighbours[i][j] != 3)) {
@@ -340,10 +340,10 @@ void write_to_master()
 
 void read_from_childs_and_print()
 {
-    for(int i = 0; i < n_procesos; i++) {
+    for (int i = 0; i < n_procesos; i++) {
         // size in rows of the current child process region
         int N = upper_bounds[i] - lower_bounds[i];
-        
+
         // create temp matrix to store info from child
         int **temp = malloc(sizeof(int *) * N);
         temp[0] = malloc(sizeof(int) * N * ncols);
@@ -355,7 +355,7 @@ void read_from_childs_and_print()
         read(master_pipes[i][0], temp[0], sizeof(int) * N * ncols);
 
         // print region
-        for(int j = 0; j < N; j++) {
+        for (int j = 0; j < N; j++) {
             for (int k = 0; k < ncols; k++) {
                 printf("%d ", temp[j][k]);
             }

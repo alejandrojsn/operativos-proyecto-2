@@ -1,1 +1,1 @@
-gcc juego.c -o juego -pthread
+gcc juego.c -o juego
